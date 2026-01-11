@@ -8,6 +8,3 @@ mysql-connector-python>=8.1.0
 requests
 aiohttp
 urllib3
-
-# Windows 使用建議（若 pip 失敗，使用 conda）
-# conda install -c conda-forge faiss-cpu

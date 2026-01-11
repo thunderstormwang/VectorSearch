@@ -17,4 +17,7 @@ docker-compose down
 docker-compose down -v
 ```
 
-
+安裝 python 套件
+```
+pip install -r requirements.txt
+```

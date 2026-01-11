@@ -1,0 +1,13 @@
+pillow>=9.0.0
+numpy>=1.24
+torch>=2.0.0
+transformers>=4.30.0
+pymilvus>=2.2.0
+google-cloud-aiplatform
+mysql-connector-python>=8.1.0
+requests
+aiohttp
+urllib3
+
+# Windows 使用建議（若 pip 失敗，使用 conda）
+# conda install -c conda-forge faiss-cpu

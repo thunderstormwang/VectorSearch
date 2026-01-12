@@ -16,18 +16,11 @@ def print_hi(name):
 if __name__ == '__main__':
     print_hi('PyCharm')
 
-    # from product_query import fetch_products
-    # products = fetch_products()
-    # for p in products:
-    #     print(p)
+    from uat_product_to_milvus import process_and_store_all, batch_process_and_store_all, search_milvus
+    process_and_store_all()
+    search_milvus(22335)
 
-    # from uat_product_to_milvus import process_and_store_all, search_milvus
-    # process_and_store_all()
-    # search_milvus(22335)
-
-    from uat_product_to_milvus_batch import process_and_store_all, search_milvus
-    # 若 process_and_store_all 是 async def，使用 asyncio.run 執行
-    asyncio.run(process_and_store_all())
+    asyncio.run(batch_process_and_store_all())
     search_milvus(22335)
 
     # from debug_milvus import run_debug

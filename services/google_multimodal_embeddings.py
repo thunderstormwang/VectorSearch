@@ -25,7 +25,7 @@ VERTEX_PROJECT = os.getenv("VERTEX_PROJECT")  # 可設環境變數
 
 # 指定 service account JSON（先設定環境變數再匯入 vertexai）
 SERVICE_ACCOUNT_FILE = os.getenv("SERVICE_ACCOUNT_JSON") or os.path.join(
-    os.path.dirname(__file__), "google_credential_thunderstormwang.json"
+    os.path.dirname(__file__), "../google_credential_thunderstormwang.json"
 )
 if os.path.exists(SERVICE_ACCOUNT_FILE):
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = SERVICE_ACCOUNT_FILE

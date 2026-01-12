@@ -111,7 +111,8 @@ def _embed_and_time(prod: ProductRecord, img: bytes) -> tuple[int, list[float], 
     return prod.product_id, vec, elapsed
 
 
-async def batch_get_embeddings(products: List[ProductRecord], images_by_id: Dict[int, bytes], max_workers: int = 8):
+async def batch_get_embeddings(products: List[ProductRecord], images_by_id: Dict[int, bytes], max_workers: int = 8) -> \
+dict[int, list[float] | None]:
     """
     同樣用 Semaphore + asyncio.to_thread 執行同步的 _embed_and_time，確保最多 max_workers 個同時執行。
     回傳 product_id -> vector (或 None) 的映射。

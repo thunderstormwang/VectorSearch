@@ -1,5 +1,6 @@
 import logging
 import time
+from typing import List, Dict
 
 from pymilvus import connections, Collection
 
@@ -39,7 +40,7 @@ def process_and_store_all(batch_size: int = 64):
             pc_end = time.perf_counter()
             logger.info(f"{download_image.__name__} took {pc_end - pc_start:.2f} seconds for productId: {prod.product_id}")
         if not img:
-            logger.warning("skip product %s due to missing image", prod.product_id)
+            logger.warning(f"skip product {prod.product_id} due to missing image")
             continue
 
         try:
@@ -123,7 +124,7 @@ async def batch_process_and_store_all(batch_size: int = 64, concurrency: int = 2
         logger.info(f"batch {batch_idx + 1} embedding finished in {t_embed:.2f} seconds")
 
         # prepare insert lists
-        to_insert = {"product_id": [], "sale_code": [], "alias_name": [], "embedding": []}
+        docs: List[Dict] = []
         for prod in batch:
             vec = embeddings.get(prod.product_id)
             if not vec:
@@ -132,22 +133,21 @@ async def batch_process_and_store_all(batch_size: int = 64, concurrency: int = 2
             if len(vec) != embed_dim:
                 logger.warning(f"vector dim mismatch for {prod.product_id}: got {len(vec)} expected {embed_dim}")
                 continue
-            to_insert["product_id"].append(prod.product_id)
-            to_insert["sale_code"].append(prod.sale_code)
-            to_insert["alias_name"].append(prod.alias_name)
-            to_insert["embedding"].append(vec)
 
-        if to_insert["product_id"]:
+            doc = {
+                "product_id": prod.product_id,
+                "sale_code": prod.sale_code,
+                "alias_name": prod.alias_name,
+                "embedding": vec
+            }
+            docs.append(doc)
+
+        if docs:
             pc_start = time.perf_counter()
-            coll.insert([
-                to_insert["product_id"],
-                to_insert["sale_code"],
-                to_insert["alias_name"],
-                to_insert["embedding"],
-            ])
+            coll.upsert(docs)
             coll.flush()
             pc_end = time.perf_counter()
-            logger.info(f'inserted batch {batch_idx + 1} of {len(to_insert["product_id"])}, took {pc_end - pc_start:.2f} seconds')
+            logger.info(f'inserted batch {batch_idx + 1} of {len(docs)}, took {pc_end - pc_start:.2f} seconds')
         else:
             logger.info(f"no valid embeddings to insert for batch {batch_idx + 1}")
 

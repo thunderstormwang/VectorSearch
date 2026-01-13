@@ -18,10 +18,10 @@ if __name__ == '__main__':
 
     from uat_product_to_milvus import process_and_store_all, batch_process_and_store_all, search_milvus
     process_and_store_all()
-    search_milvus(22335)
+    search_milvus(22335, 20)
 
     asyncio.run(batch_process_and_store_all())
-    search_milvus(22335)
+    search_milvus(22335, 20)
 
     # from debug_milvus import run_debug
     # run_debug(22335)

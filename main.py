@@ -12,16 +12,16 @@ def print_hi(name):
     print(f'Hi, {name}')  # Press ⌘F8 to toggle the breakpoint.
 
 
-# Press the green button in the gutter to run the script.
-if __name__ == '__main__':
+async def main():
     print_hi('PyCharm')
 
-    from uat_product_to_milvus import process_and_store_all, batch_process_and_store_all, search_milvus
+    from uat_product_to_milvus import process_and_store_all, process_and_store_all_async, search_milvus_async
     process_and_store_all()
-    search_milvus(22335, 20)
+    await search_milvus_async(22335, 20)
 
-    asyncio.run(batch_process_and_store_all())
-    search_milvus(22335, 20)
+    # asyncio.run(batch_process_and_store_all())
+    await process_and_store_all_async()
+    await search_milvus_async(22335, 20)
 
     # from debug_milvus import run_debug
     # run_debug(22335)
@@ -31,3 +31,7 @@ if __name__ == '__main__':
     # # search_milvus(text="紅色跑車")
     # search_many_texts(["紅色跑車", "藍色跑車", "狗", "貓", "人"])
     # query_by_path("./images\鞋貓劍客.jpg")
+
+# Press the green button in the gutter to run the script.
+if __name__ == '__main__':
+    asyncio.run(main())

@@ -6,9 +6,9 @@ from pymilvus import connections, Collection
 
 from models.product_record import ProductRecord
 from services.milvus_client import connect_milvus, init_milvus_collection, print_collection_stats
-from services.download_image import download_image, batch_download_images
+from services.download_image import download_image, batch_download_images, batch_download_images_async, download_image_async
 from services.google_multimodal_embeddings import embed_text_and_image, batch_get_embeddings
-from services.product_query import fetch_products, fetch_product_by_id
+from services.product_query import fetch_products, fetch_product_by_id, fetch_products_async, fetch_product_by_id_async
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(name)s:%(message)s")
 logger = logging.getLogger(__name__)
@@ -35,6 +35,13 @@ def dedup(products: list[ProductRecord]) -> list[Any]:
 
 
 def process_and_store_all(batch_size: int = 64):
+    """
+    同步版本，一次處理 batch_size 筆資料。
+    下載圖片與取得向量皆為同步呼叫。
+    依序處理每個 batch，避免一次載入過多資料。
+    適合資料量較小或環境不支援 asyncio 的情況。
+    也可作為非同步版本的參考範例。
+    """
     process_and_store_all_t0 = time.perf_counter()
     products = fetch_products()
     ori_len = len(products)
@@ -47,57 +54,72 @@ def process_and_store_all(batch_size: int = 64):
 
     coll = init_milvus_collection(COLLECTION_NAME, EMBEDDING_DIM, MILVUS_HOST, MILVUS_PORT)
 
-    # prepare insert lists
-    docs: List[Dict] = []
-    for prod in products:
-        img = None
-        if prod.pic:
+    total = len(products)
+    total_batches = (total + batch_size - 1) // batch_size
+
+    for batch_idx in range(total_batches):
+        start = batch_idx * batch_size
+        batch = products[start:start + batch_size]
+        logger.info(f"processing batch {batch_idx + 1}/{total_batches}: {len(batch)} products")
+
+        # prepare insert lists
+        docs: List[Dict] = []
+        for prod in batch:
+            img = None
+            if prod.pic:
+                pc_start = time.perf_counter()
+                img = download_image(prod.pic)
+                pc_end = time.perf_counter()
+                logger.info(f"{download_image.__name__} took {pc_end - pc_start:.2f} seconds for productId: {prod.product_id}")
+            if not img:
+                logger.warning(f"skip product {prod.product_id} due to missing image")
+                continue
+
+            try:
+                pc_start = time.perf_counter()
+                vec = embed_text_and_image(prod.alias_name, img)
+                pc_end = time.perf_counter()
+                logger.info(f"{embed_text_and_image.__name__} took {pc_end - pc_start:.2f} seconds for productId: {prod.product_id}")
+            except Exception as e:
+                logger.warning(f"embedding failed for {prod.product_id}: {e}")
+                continue
+
+            # 檢查向量維度
+            if len(vec) != EMBEDDING_DIM:
+                logger.warning(f"vector dim mismatch for {prod.product_id}: got {len(vec)} expected {EMBEDDING_DIM}")
+                continue
+
+            doc = {
+                "product_id": prod.product_id,
+                "sale_code": prod.sale_code,
+                "alias_name": prod.alias_name,
+                "embedding": vec
+            }
+            docs.append(doc)
+
+        if docs:
             pc_start = time.perf_counter()
-            img = download_image(prod.pic)
+            coll.upsert(docs)
+            coll.flush()
             pc_end = time.perf_counter()
-            logger.info(f"{download_image.__name__} took {pc_end - pc_start:.2f} seconds for productId: {prod.product_id}")
-        if not img:
-            logger.warning(f"skip product {prod.product_id} due to missing image")
-            continue
-
-        try:
-            pc_start = time.perf_counter()
-            vec = embed_text_and_image(prod.alias_name, img)
-            pc_end = time.perf_counter()
-            logger.info(f"{embed_text_and_image.__name__} took {pc_end - pc_start:.2f} seconds for productId: {prod.product_id}")
-        except Exception as e:
-            logger.warning(f"embedding failed for {prod.product_id}: {e}")
-            continue
-
-        # 檢查向量維度
-        if len(vec) != EMBEDDING_DIM:
-            logger.warning(f"vector dim mismatch for {prod.product_id}: got {len(vec)} expected {EMBEDDING_DIM}")
-            continue
-
-        doc = {
-            "product_id": prod.product_id,
-            "sale_code": prod.sale_code,
-            "alias_name": prod.alias_name,
-            "embedding": vec
-        }
-        docs.append(doc)
-
-    if docs:
-        pc_start = time.perf_counter()
-        coll.upsert(docs)
-        coll.flush()
-        pc_end = time.perf_counter()
-        logger.info(f'inserted doc count: {len(docs)}, took {pc_end - pc_start:.2f} seconds')
-    else:
-        logger.info(f"no valid embeddings to insert")
+            logger.info(f'inserted doc count: {len(docs)}, took {pc_end - pc_start:.2f} seconds')
+        else:
+            logger.info(f"no valid embeddings to insert")
 
     logger.info(f"{__name__} completed in {time.perf_counter() - process_and_store_all_t0:.2f} seconds")
     print_collection_stats(COLLECTION_NAME)
 
 
-async def batch_process_and_store_all(batch_size: int = 64, concurrency: int = 16):
+async def process_and_store_all_async(batch_size: int = 64, concurrency: int = 16):
+    """"
+    非同步版本，一次處理 batch_size 筆資料。
+    下載圖片與取得向量皆為非同步呼叫，並可設定最大同時執行數量 concurrency。
+    依序處理每個 batch，避免一次載入過多資料。
+    適合資料量較大或環境支援 asyncio 的情況。
+    也可作為同步版本的參考範例。
+    """
     batch_process_and_store_all_t0 = time.perf_counter()
-    products = fetch_products()
+    products = await fetch_products_async()
     ori_len = len(products)
     products = dedup(products)
     logger.info(f"fetched {ori_len} products, reduced to {len(products)} after deduplication")
@@ -117,9 +139,9 @@ async def batch_process_and_store_all(batch_size: int = 64, concurrency: int = 1
         logger.info(f"processing batch {batch_idx + 1}/{total_batches}: {len(batch)} products (concurrency={concurrency})")
 
         t0 = time.perf_counter()
-        images_by_id = await batch_download_images(batch, max_workers=concurrency)
+        images_by_id = await batch_download_images_async(batch, max_workers=concurrency)
         t_download = time.perf_counter() - t0
-        logger.info(f"batch {batch_idx + 1} {batch_download_images.__name__} took {t_download:.2f} seconds")
+        logger.info(f"batch {batch_idx + 1} {batch_download_images_async.__name__} took {t_download:.2f} seconds")
 
         t0 = time.perf_counter()
         embeddings = await batch_get_embeddings(batch, images_by_id, max_workers=concurrency)
@@ -158,8 +180,8 @@ async def batch_process_and_store_all(batch_size: int = 64, concurrency: int = 1
     print_collection_stats(COLLECTION_NAME)
 
 
-def search_milvus(product_id: int, top_k: int = 5):
-    prod = fetch_product_by_id(product_id)
+async def search_milvus_async(product_id: int, top_k: int = 5):
+    prod = await fetch_product_by_id_async(product_id)
     if not prod:
         raise RuntimeError(f"Product with id {product_id} not found")
 
@@ -174,7 +196,7 @@ def search_milvus(product_id: int, top_k: int = 5):
         raise RuntimeError(f"Failed to open/load collection `{COLLECTION_NAME}`: {e}")
 
     try:
-        img = download_image(prod.pic)
+        img = await download_image_async(url=prod.pic,session=None)
         if not img:
             logger.warning(f"download_image returned None for {prod.pic}")
             return []
@@ -202,4 +224,4 @@ def search_milvus(product_id: int, top_k: int = 5):
 
 
 if __name__ == "__main__":
-    batch_process_and_store_all()
+    process_and_store_all_async()

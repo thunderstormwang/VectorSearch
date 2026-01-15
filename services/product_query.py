@@ -116,8 +116,7 @@ FROM product.products p
             "host": db_config["host"],
             "port": db_config["port"],
             "user": db_config["user"],
-            "password": db_config["password"],
-            "db": db_config["database"],
+            "password": db_config["password"]
         }
         conn = await aiomysql.connect(**connect_kwargs)
         async with conn.cursor(aiomysql.DictCursor) as cursor:
@@ -160,8 +159,7 @@ WHERE p.id = %s
             "host": db_config["host"],
             "port": db_config["port"],
             "user": db_config["user"],
-            "password": db_config["password"],
-            "db": db_config["database"],
+            "password": db_config["password"]
         }
         conn = await aiomysql.connect(**connect_kwargs)
         async with conn.cursor(aiomysql.DictCursor) as cursor:

@@ -80,7 +80,7 @@ async def batch_download_images_async(products: List[ProductRecord], max_workers
     回傳 product_id -> bytes 或 None 的字典。
     """
     sem = asyncio.Semaphore(max_workers)
-    results: Dict[int, Optional[bytes]] = {}
+    result: Dict[int, Optional[bytes]] = {}
 
     async with aiohttp.ClientSession() as session:
         async def worker(prod: ProductRecord):
@@ -90,6 +90,6 @@ async def batch_download_images_async(products: List[ProductRecord], max_workers
         tasks = [asyncio.create_task(worker(p)) for p in products]
         for fut in asyncio.as_completed(tasks):
             product_id, img, elapsed = await fut
-            results[product_id] = img
+            result[product_id] = img
 
-    return results
+    return result

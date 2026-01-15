@@ -107,7 +107,6 @@ def _embed_and_time(prod: ProductRecord, img: bytes) -> tuple[int, list[float], 
     t0 = time.perf_counter()
     vec = embed_text_and_image(prod.alias_name, img)
     elapsed = time.perf_counter() - t0
-    # logger.info(f"get_embeddings took {elapsed:.2f} seconds for productId: {prod.product_id}")
     return prod.product_id, vec, elapsed
 
 

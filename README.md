@@ -1,6 +1,11 @@
 # VectorSearch
-向量搜尋
 
+安裝 python 套件
+```
+pip install -r requirements.txt
+```
+
+啟動 Milvus 服務
 ```
 docker-compose up -d
 ```
@@ -17,7 +22,7 @@ docker-compose down
 docker-compose down -v
 ```
 
-安裝 python 套件
+啟動 Attu 服務
 ```
-pip install -r requirements.txt
+docker run -d --name attu -p 8000:3000 -e MILVUS_URL=http://host.docker.internal:19530 zilliz/attu:latest
 ```

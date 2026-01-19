@@ -24,5 +24,6 @@ docker-compose down -v
 
 啟動 Attu 服務
 ```
-docker run -d --name attu -p 8000:3000 -e MILVUS_URL=http://host.docker.internal:19530 zilliz/attu:latest
+docker run -d --name attu -p 8192:3000 -e MILVUS_URL=http://host.docker.internal:19530 zilliz/attu:latest
+docker run -d --name attu -p 8192:3000 zilliz/attu:latest
 ```

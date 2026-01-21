@@ -5,10 +5,10 @@ from typing import List, Dict, Any
 from pymilvus import connections, Collection
 
 from models.product_record import ProductRecord
-from services.milvus_client import connect_milvus, init_milvus_collection, print_collection_stats
-from services.download_image import download_image, batch_download_images, batch_download_images_async, download_image_async
-from services.google_multimodal_embeddings import embed_text_and_image, batch_get_embeddings
-from services.product_query import fetch_products, fetch_product_by_id, fetch_products_async, fetch_product_by_id_async
+import services.my_milvus_client as my_milvus_client
+import services.download_image as dl_img
+import services.google_multimodal_embeddings as vertex_mm_emb
+import services.product_query as product_query
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(name)s:%(message)s")
 logger = logging.getLogger(__name__)
@@ -17,21 +17,6 @@ MILVUS_HOST = '127.0.0.1'
 MILVUS_PORT = 19530
 COLLECTION_NAME = 'uat_product_embeddings'
 EMBEDDING_DIM = 1408
-
-
-def dedup(products: list[ProductRecord]) -> list[Any]:
-    """
-    去重，保留第一次出現的 product_id（原序不變）
-    """
-    seen = set()
-    unique_products = []
-    for p in products:
-        if p.product_id in seen:
-            continue
-        seen.add(p.product_id)
-        unique_products.append(p)
-    products = unique_products
-    return products
 
 
 def process_and_store_all(batch_size: int = 64):
@@ -43,16 +28,16 @@ def process_and_store_all(batch_size: int = 64):
     也可作為非同步版本的參考範例。
     """
     process_and_store_all_t0 = time.perf_counter()
-    products = fetch_products()
+    products = product_query.fetch_products()
     ori_len = len(products)
-    products = dedup(products)
+    products = _dedup(products)
     logger.info(f"fetched {ori_len} products, reduced to {len(products)} after deduplication")
 
     if not products:
         logger.info("no products to process")
         return
 
-    coll = init_milvus_collection(COLLECTION_NAME, EMBEDDING_DIM, MILVUS_HOST, MILVUS_PORT)
+    coll = my_milvus_client.init_milvus_collection(COLLECTION_NAME, EMBEDDING_DIM, MILVUS_HOST, MILVUS_PORT)
 
     total = len(products)
     total_batches = (total + batch_size - 1) // batch_size
@@ -68,18 +53,18 @@ def process_and_store_all(batch_size: int = 64):
             img = None
             if prod.pic:
                 pc_start = time.perf_counter()
-                img = download_image(prod.pic)
+                img = dl_img.download_image(prod.pic)
                 pc_end = time.perf_counter()
-                logger.info(f"{download_image.__name__} took {pc_end - pc_start:.2f} seconds for productId: {prod.product_id}")
+                logger.info(f"{dl_img.download_image.__name__} took {pc_end - pc_start:.2f} seconds for productId: {prod.product_id}")
             if not img:
                 logger.warning(f"skip product {prod.product_id} due to missing image")
                 continue
 
             try:
                 pc_start = time.perf_counter()
-                vec = embed_text_and_image(prod.alias_name, img)
+                vec = vertex_mm_emb.embed_text_and_image(prod.alias_name, img)
                 pc_end = time.perf_counter()
-                logger.info(f"{embed_text_and_image.__name__} took {pc_end - pc_start:.2f} seconds for productId: {prod.product_id}")
+                logger.info(f"{vertex_mm_emb.embed_text_and_image.__name__} took {pc_end - pc_start:.2f} seconds for productId: {prod.product_id}")
             except Exception as e:
                 logger.warning(f"embedding failed for {prod.product_id}: {e}")
                 continue
@@ -107,7 +92,7 @@ def process_and_store_all(batch_size: int = 64):
             logger.info(f"no valid embeddings to insert")
 
     logger.info(f"{__name__} completed in {time.perf_counter() - process_and_store_all_t0:.2f} seconds")
-    print_collection_stats(COLLECTION_NAME)
+    my_milvus_client.print_collection_stats(COLLECTION_NAME)
 
 
 async def process_and_store_all_async(batch_size: int = 64, concurrency: int = 16):
@@ -119,16 +104,16 @@ async def process_and_store_all_async(batch_size: int = 64, concurrency: int = 1
     也可作為同步版本的參考範例。
     """
     batch_process_and_store_all_t0 = time.perf_counter()
-    products = await fetch_products_async()
+    products = await product_query.fetch_products_async()
     ori_len = len(products)
-    products = dedup(products)
+    products = _dedup(products)
     logger.info(f"fetched {ori_len} products, reduced to {len(products)} after deduplication")
 
     if not products:
         logger.info("no products to process")
         return
 
-    coll = init_milvus_collection(COLLECTION_NAME, EMBEDDING_DIM, MILVUS_HOST, MILVUS_PORT)
+    coll = my_milvus_client.init_milvus_collection(COLLECTION_NAME, EMBEDDING_DIM, MILVUS_HOST, MILVUS_PORT)
 
     total = len(products)
     total_batches = (total + batch_size - 1) // batch_size
@@ -139,14 +124,14 @@ async def process_and_store_all_async(batch_size: int = 64, concurrency: int = 1
         logger.info(f"processing batch {batch_idx + 1}/{total_batches}: {len(batch)} products (concurrency={concurrency})")
 
         t0 = time.perf_counter()
-        images_by_id = await batch_download_images_async(batch, max_workers=concurrency)
+        images_by_id = await dl_img.batch_download_images_async(batch, max_workers=concurrency)
         t_download = time.perf_counter() - t0
-        logger.info(f"batch {batch_idx + 1} {batch_download_images_async.__name__} took {t_download:.2f} seconds")
+        logger.info(f"batch {batch_idx + 1} {dl_img.batch_download_images_async.__name__} took {t_download:.2f} seconds")
 
         t0 = time.perf_counter()
-        embeddings = await batch_get_embeddings(batch, images_by_id, max_workers=concurrency)
+        embeddings = await vertex_mm_emb.batch_get_embeddings(batch, images_by_id, max_workers=concurrency)
         t_embed = time.perf_counter() - t0
-        logger.info(f"batch {batch_idx + 1} {batch_get_embeddings.__name__} took {t_embed:.2f} seconds")
+        logger.info(f"batch {batch_idx + 1} {vertex_mm_emb.batch_get_embeddings.__name__} took {t_embed:.2f} seconds")
 
         # prepare insert lists
         docs: List[Dict] = []
@@ -177,17 +162,17 @@ async def process_and_store_all_async(batch_size: int = 64, concurrency: int = 1
             logger.info(f"no valid embeddings to insert for batch {batch_idx + 1}")
 
     logger.info(f"{__name__} completed in {time.perf_counter() - batch_process_and_store_all_t0:.2f} seconds")
-    print_collection_stats(COLLECTION_NAME)
+    my_milvus_client.print_collection_stats(COLLECTION_NAME)
 
 
 async def search_milvus_async(product_id: int, top_k: int = 5):
-    prod = await fetch_product_by_id_async(product_id)
+    prod = await product_query.fetch_product_by_id_async(product_id)
     if not prod:
         raise RuntimeError(f"Product with id {product_id} not found")
 
     logger.info(f'searching Milvus for product_id={prod.product_id}, text="{prod.alias_name}", image_path={prod.pic}')
 
-    connect_milvus(MILVUS_HOST, MILVUS_PORT)
+    my_milvus_client.connect_milvus(MILVUS_HOST, MILVUS_PORT)
     try:
         coll = Collection(COLLECTION_NAME)
         coll.load()
@@ -196,12 +181,12 @@ async def search_milvus_async(product_id: int, top_k: int = 5):
         raise RuntimeError(f"Failed to open/load collection `{COLLECTION_NAME}`: {e}")
 
     try:
-        img = await download_image_async(url=prod.pic,session=None)
+        img = await dl_img.download_image_async(url=prod.pic, session=None)
         if not img:
             logger.warning(f"download_image returned None for {prod.pic}")
             return []
 
-        q_vec = embed_text_and_image(prod.alias_name, img)
+        q_vec = vertex_mm_emb.embed_text_and_image(prod.alias_name, img)
         logger.info(f'len: {len(q_vec)}, {q_vec}')
 
         search_params = {"metric_type": "IP", "params": {"nprobe": 10}}
@@ -221,6 +206,21 @@ async def search_milvus_async(product_id: int, top_k: int = 5):
             connections.disconnect("default")
         except Exception:
             pass
+
+
+def _dedup(products: list[ProductRecord]) -> list[Any]:
+    """
+    去重，保留第一次出現的 product_id（原序不變）
+    """
+    seen = set()
+    unique_products = []
+    for p in products:
+        if p.product_id in seen:
+            continue
+        seen.add(p.product_id)
+        unique_products.append(p)
+    products = unique_products
+    return products
 
 
 if __name__ == "__main__":

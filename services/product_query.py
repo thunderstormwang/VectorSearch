@@ -179,6 +179,7 @@ WHERE p.id = %s
             conn.close()
     return None
 
+
 # 範例使用
 if __name__ == "__main__":
     products = fetch_products()
